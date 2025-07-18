@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Gomoku with AI (五子棋)</title>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; margin-top: 20px; }
+    #board {
+      display: grid;
+      grid-template-columns: repeat(15, 40px);
+      grid-template-rows: repeat(15, 40px);
+      margin: 0 auto;
+      background-color: #f5deb3;
+      border: 2px solid #333;
+    }
+    .cell { border: 1px solid #999; position: relative; }
+    .cell:hover { background-color: #eee; }
+    .stone {
+      width: 80%; height: 80%; border-radius: 50%;
+      position: absolute; top: 10%; left: 10%;
+    }
+    .black { background-color: black; }
+    .white { background-color: white; border: 1px solid #000; }
+    .winner { box-shadow: 0 0 10px 3px gold; }
+    #status { margin: 20px; font-size: 1.2em; }
+    #restartBtn { padding: 10px 20px; font-size: 16px; cursor: pointer; }
+    #history { margin-top: 15px; font-size: 0.9em; }
+  </style>
+</head>
+<body>
+  <h1>Gomoku vs AI (五子棋)</h1>
+  <div id="status">Your Turn: <span id="turn">Black</span></div>
+  <div id="board"></div>
+  <button id="restartBtn">Restart Game</button>
+  <div id="history"></div>
+
+  <script>
+    const size = 15;
+    const board = document.getElementById('board');
+    const statusText = document.getElementById('status');
+    const turnDisplay = document.getElementById('turn');
+    const restartBtn = document.getElementById('restartBtn');
+    const historyDiv = document.getElementById('history');
+
+    let grid = [];
+    let currentPlayer = 'black';
+    let isGameOver = false;
+    let moveHistory = [];
+
+    function createBoard() {
+      board.innerHTML = '';
+      grid = Array.from({ length: size }, () => Array(size).fill(null));
+      moveHistory = [];
+      isGameOver = false;
+      currentPlayer = 'black';
+      turnDisplay.textContent = 'Black';
+      historyDiv.innerHTML = '';
+
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          const cell = document.createElement('div');
+          cell.className = 'cell';
+          cell.dataset.x = x;
+          cell.dataset.y = y;
+          cell.addEventListener('click', handleClick);
+          board.appendChild(cell);
+        }
+      }
+    }
+
+    function handleClick(e) {
+      if (isGameOver || currentPlayer !== 'black') return;
+      const x = parseInt(e.target.dataset.x);
+      const y = parseInt(e.target.dataset.y);
+      if (grid[y][x]) return;
+
+      placeStone(x, y, 'black');
+      moveHistory.push(`Black at (${x + 1}, ${y + 1})`);
+      updateHistory();
+
+      if (checkWin(x, y, 'black')) {
+        endGame('Black');
+        return;
+      }
+
+      currentPlayer = 'white';
+      turnDisplay.textContent = 'White (AI)';
+      setTimeout(() => {
+        aiMove();
+      }, 500);
+    }
+
+    function placeStone(x, y, color) {
+      grid[y][x] = color;
+      const index = y * size + x;
+      const cell = board.children[index];
+      const stone = document.createElement('div');
+      stone.className = `stone ${color}`;
+      cell.appendChild(stone);
+    }
+
+    function aiMove() {
+      if (isGameOver) return;
+
+      // Simple AI: block player if 4 in a row, else pick near last move
+      let move = findBlockMove('black') || findRandomNearbyMove();
+      if (!move) return;
+
+      const [x, y] = move;
+      placeStone(x, y, 'white');
+      moveHistory.push(`White (AI) at (${x + 1}, ${y + 1})`);
+      updateHistory();
+
+      if (checkWin(x, y, 'white')) {
+        endGame('White (AI)');
+        return;
+      }
+
+      currentPlayer = 'black';
+      turnDisplay.textContent = 'Black';
+    }
+
+    function findBlockMove(playerColor) {
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          if (!grid[y][x]) {
+            grid[y][x] = playerColor;
+            if (checkWin(x, y, playerColor, true)) {
+              grid[y][x] = null;
+              return [x, y];
+            }
+            grid[y][x] = null;
+          }
+        }
+      }
+      return null;
+    }
+
+    function findRandomNearbyMove() {
+      const dirs = [-1, 0, 1];
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          if (grid[y][x]) {
+            for (let dx of dirs) {
+              for (let dy of dirs) {
+                let nx = x + dx, ny = y + dy;
+                if (nx >= 0 && ny >= 0 && nx < size && ny < size && !grid[ny][nx]) {
+                  return [nx, ny];
+                }
+              }
+            }
+          }
+        }
+      }
+      // fallback: pick random
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          if (!grid[y][x]) return [x, y];
+        }
+      }
+    }
+
+    function updateHistory() {
+      historyDiv.innerHTML = `<strong>Move History:</strong><br>${moveHistory.join('<br>')}`;
+    }
+
+    function checkWin(x, y, player, dryRun = false) {
+      const directions = [
+        [1, 0], [0, 1], [1, 1], [1, -1]
+      ];
+      for (let [dx, dy] of directions) {
+        let count = 1;
+        let cells = [[x, y]];
+        for (let i = 1; i < 5; i++) {
+          const nx = x + dx * i, ny = y + dy * i;
+          if (nx < 0 || nx >= size || ny < 0 || ny >= size) break;
+          if (grid[ny][nx] === player) {
+            count++;
+            cells.push([nx, ny]);
+          } else break;
+        }
+        for (let i = 1; i < 5; i++) {
+          const nx = x - dx * i, ny = y - dy * i;
+          if (nx < 0 || nx >= size || ny < 0 || ny >= size) break;
+          if (grid[ny][nx] === player) {
+            count++;
+            cells.push([nx, ny]);
+          } else break;
+        }
+        if (count >= 5) {
+          if (!dryRun) highlightWinningStones(cells);
+          retu
