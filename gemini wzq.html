@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gomoku - Five in a Row</title>
+
+    <style>
+        /* --- General Styling --- */
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background-color: #f0f0f0;
+            padding-top: 20px;
+        }
+
+        h1 {
+            color: #333;
+        }
+
+        #status-panel {
+            font-size: 1.5em;
+            margin-bottom: 20px;
+            font-weight: bold;
+            color: #444;
+            height: 30px;
+        }
+
+        /* --- Board and Stone Styling --- */
+        #board-container {
+            position: relative;
+            /* Board size is (GRID_SIZE - 1) * CELL_SIZE + BORDER_WIDTH * 2 */
+            /* For 15x15, it's 14 * 40px = 560px + 4px border = 564px */
+            width: 564px;
+            height: 564px;
+            cursor: pointer;
+        }
+
+        #game-board {
+            width: 100%;
+            height: 100%;
+            background-color: #DEB887; /* Wooden board color */
+            border: 2px solid #8B4513; /* Dark wood border */
+            box-sizing: border-box;
+
+            /* Draw a perfect grid using repeating background gradients */
+            /* Each cell is 40px x 40px */
+            background-image:
+                repeating-linear-gradient(to right, #000 0, #000 1px, transparent 1px, transparent 40px),
+                repeating-linear-gradient(to bottom, #000 0, #000 1px, transparent 1px, transparent 40px);
+            background-size: 40px 40px;
+
+            /* Star points (Tengen) for visual reference on a 15x15 board */
+            background-position: 20px 20px;
+        }
+        
+        .stone {
+            position: absolute;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            box-sizing: border-box;
+            /* Transform centers the stone perfectly on the intersection */
+            transform: translate(-50%, -50%);
+            transition: all 0.1s ease-in-out;
+        }
+        
+        .black {
+            background: radial-gradient(circle at 12px 12px, #666, #000);
+            box-shadow: 1px 1px 3px rgba(0,0,0,0.7);
+        }
+
+        .white {
+            background: radial-gradient(circle at 12px 12px, #fff, #ccc);
+            border: 1px solid #888;
+            box-shadow: 1px 1px 3px rgba(0,0,0,0.5);
+        }
+
+        /* --- Enhanced Features Styling --- */
+        .winning-stone {
+            /* Highlight the winning stones with a glow */
+            box-shadow: 0 0 15px 5px gold;
+        }
+
+        #ghost-stone {
+            /* Semi-transparent hover effect */
+            background-color: rgba(0, 0, 0, 0.3);
+            display: none; /* Hidden by default */
+        }
+
+        #restart-button {
+            margin-top: 20px;
+            padding: 10px 25px;
+            font-size: 1.2em;
+            cursor: pointer;
+            border-radius: 8px;
+            border: 2px solid #555;
+            background-color: #eee;
+        }
+        
+        #restart-button:hover {
+            background-color: #ddd;
+        }
+
+    </style>
+</head>
+<body>
+
+    <h1>Gomoku (Five in a Row)</h1>
+    <div id="status-panel">Black's Turn</div>
+
+    <div id="board-container">
+        <div id="game-board"></div>
+        <div id="stone-layer"></div>
+        <!-- Ghost stone for hover effect -->
+        <div id="ghost-stone" class="stone"></div>
+    </div>
+
+    <button id="restart-button">Restart Game</button>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+
+            // --- Constants and State ---
+            const BOARD_SIZE = 15; // Configurable board size
+            const CELL_SIZE = 40;  // Size of each cell in pixels
+
+            const boardContainer = document.getElementById('board-container');
+            const stoneLayer = document.getElementById('stone-layer');
+            const statusPanel = document.getElementById('status-panel');
+            const restartButton = document.getElementById('restart-button');
+            const ghostStone = document.getElementById('ghost-stone');
+            
+            let boardState = []; // 2D array to store stone placements
+            let currentPlayer = 'black';
+            let gameOver = false;
+
+            // --- Game Initialization ---
+            function initGame() {
+                // Reset the board state array
+                boardState = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(null));
+                
+                // Reset game variables
+                currentPlayer = 'black';
+                gameOver = false;
+
+                // Clear visual elements
+                stoneLayer.innerHTML = '';
+                statusPanel.textContent = "Black's Turn";
+                statusPanel.style.color = '#444';
+            }
+
+            // --- Event Handlers ---
+            boardContainer.addEventListener('click', handleBoardClick);
+            restartButton.addEventListener('click', initGame);
+            
+            // Event handlers for hover effect
+            boardContainer.addEventListener('mousemove', handleBoardHover);
+            boardContainer.addEventListener('mouseleave', () => {
+                ghostStone.style.display = 'none';
+            });
+
+            // --- Gameplay Logic ---
+            function handleBoardClick(event) {
+                if (gameOver) return; // Prevent moves after the game has ended
+
+                const { row, col } = getGridCoordinates(event);
+
+                if (boardState[row][col] === null) {
+                    placeStone(row, col);
+                    if (checkForWin(row, col)) {
+                        endGame();
+                    } else {
+                        switchPlayer();
+                    }
+                }
+            }
+            
+            function handleBoardHover(event) {
+                if (gameOver) return;
+                
+                const { row, col } = getGridCoordinates(event);
+                
+                if (boardState[row][col] === null) {
+                    ghostStone.style.display = 'block';
+                    ghostStone.style.top = `${row * CELL_SIZE + CELL_SIZE / 2}px`;
+                    ghostStone.style.left = `${col * CELL_SIZE + CELL_SIZE / 2}px`;
+                } else {
+                    ghostStone.style.display = 'none';
+                }
+            }
+
+            function placeStone(row, col) {
+                // Update the board state
+                boardState[row][col] = currentPlayer;
+
+                // Create and place the visual stone
+                const stone = document.createElement('div');
+                stone.classList.add('stone', currentPlayer);
+                stone.style.top = `${row * CELL_SIZE + CELL_SIZE / 2}px`;
+                stone.style.left = `${col * CELL_SIZE + CELL_SIZE / 2}px`;
+                stone.dataset.row = row;
+                stone.dataset.col = col;
+                stoneLayer.appendChild(stone);
+            }
+
+            function switchPlayer() {
+                currentPlayer = (currentPlayer === 'black') ? 'white' : 'black';
+                statusPanel.textContent = `${currentPlayer.charAt(0).toUpperCase() + currentPlayer.slice(1)}'s Turn`;
+            }
+
+            function endGame() {
+                gameOver = true;
+                statusPanel.textContent = `${currentPlayer.charAt(0).toUpperCase() + currentPlayer.slice(1)} Wins!`;
+                statusPanel.style.color = 'green';
+                ghostStone.style.display = 'none'; // Hide ghost stone on win
+            }
+
+            // --- Win Condition Logic ---
+            function checkForWin(row, col) {
+                const directions = [
+                    { x: 1, y: 0 },  // Horizontal
+                    { x: 0, y: 1 },  // Vertical
+                    { x: 1, y: 1 },  // Diagonal (down-right)
+                    { x: 1, y: -1 }  // Diagonal (up-right)
+                ];
+
+                for (const dir of directions) {
+                    const count = countStones(row, col, dir) + countStones(row, col, { x: -dir.x, y: -dir.y }) + 1;
+                    if (count >= 5) {
+                        highlightWinningStones(row, col, dir);
+                        return true;
+                    }
+                }
+                return false;
+            }
+
+            function countStones(row, col, dir) {
+                let count = 0;
+                let r = row + dir.y;
+                let c = col + dir.x;
+
+                while (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE && boardState[r][c] === currentPlayer) {
+                    count++;
+                    r += dir.y;
+                    c += dir.x;
+                }
+                return count;
+            }
+
+            function highlightWinningStones(row, col, dir) {
+                const winningStones = [{row, col}];
+                
+                // Positive direction
+                let r = row + dir.y;
+                let c = col + dir.x;
+                while (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE && boardState[r][c] === currentPlayer) {
+                    winningStones.push({row: r, col: c});
+                    r += dir.y;
+                    c += dir.x;
+                }
+                
+                // Negative direction
+                r = row - dir.y;
+                c = col - dir.x;
+                while (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE && boardState[r][c] === currentPlayer) {
+                    winningStones.push({row: r, col: c});
+                    r -= dir.y;
+                    c -= dir.x;
+                }
+                
+                // Apply the highlight class
+                document.querySelectorAll('.stone').forEach(stoneEl => {
+                    const stoneRow = parseInt(stoneEl.dataset.row);
+                    const stoneCol = parseInt(stoneEl.dataset.col);
+                    if (winningStones.some(pos => pos.row === stoneRow && pos.col === stoneCol)) {
+                        stoneEl.classList.add('winning-stone');
+                    }
+                });
+            }
+
+            // --- Utility Functions ---
+            function getGridCoordinates(event) {
+                const rect = boardContainer.getBoundingClientRect();
+                const x = event.clientX - rect.left;
+                const y = event.clientY - rect.top;
+
+                // Find the nearest intersection
+                const col = Math.floor(x / CELL_SIZE);
+                const row = Math.floor(y / CELL_SIZE);
+                return { row, col };
+            }
+
+            // --- Start the game for the first time ---
+            initGame();
+        });
+    </script>
+
+</body>
+</html>
