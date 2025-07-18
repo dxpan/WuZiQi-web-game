@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gomoku - Play Against AI</title>
+
+    <style>
+        /* --- General Page Styling --- */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #2c3e50;
+            color: #ecf0f1;
+            padding-top: 20px;
+        }
+
+        h1 {
+            color: #ecf0f1;
+            text-shadow: 2px 2px 4px #1a252f;
+        }
+
+        /* --- Player Selection & Status Panel --- */
+        #setup-panel, #status-panel {
+            min-height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+        }
+
+        #status-panel {
+            font-size: 1.5em;
+            font-weight: bold;
+        }
+
+        .player-choice-btn, #restart-button {
+            font-size: 1.2em;
+            padding: 10px 20px;
+            margin: 0 10px;
+            cursor: pointer;
+            border-radius: 8px;
+            border: 2px solid #95a5a6;
+            background-color: #34495e;
+            color: #ecf0f1;
+            transition: all 0.2s ease;
+        }
+        .player-choice-btn:hover, #restart-button:hover {
+            background-color: #4a627a;
+            border-color: #ecf0f1;
+        }
+        
+        #restart-button {
+            margin-top: 20px;
+            display: none; /* Hidden until game starts */
+        }
+        
+        /* --- Game Board Styling --- */
+        #board-container {
+            position: relative;
+            /* Size: (15 - 1) * 36px + 4px border = 508px */
+            width: 508px;
+            height: 508px;
+            margin-top: 20px;
+            display: none; /* Hidden until player chooses color */
+            cursor: pointer;
+        }
+        
+        #game-board {
+            width: 100%;
+            height: 100%;
+            background-color: #DEB887; /* Wooden board color */
+            border: 4px solid #8B4513; /* Dark wood border */
+            box-sizing: border-box;
+            background-image:
+                repeating-linear-gradient(to right, #5a3a1a 0, #5a3a1a 1px, transparent 1px, transparent 36px),
+                repeating-linear-gradient(to bottom, #5a3a1a 0, #5a3a1a 1px, transparent 1px, transparent 36px);
+            background-size: 36px 36px;
+            background-position: 18px 18px; /* Center the grid lines */
+        }
+
+        /* --- Stone Styling --- */
+        #stone-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        .stone {
+            position: absolute;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            box-sizing: border-box;
+            transform: translate(-50%, -50%);
+            transition: all 0.1s ease-in-out;
+        }
+
+        .black {
+            background: radial-gradient(circle at 10px 10px, #666, #000);
+            box-shadow: 1px 1px 3px rgba(0,0,0,0.7);
+        }
+
+        .white {
+            background: radial-gradient(circle at 10px 10px, #fff, #ccc);
+            border: 1px solid #888;
+            box-shadow: 1px 1px 3px rgba(0,0,0,0.5);
+        }
+
+        .winning-stone {
+            box-shadow: 0 0 15px 5px #f1c40f;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Gomoku: You vs. AI</h1>
+
+    <div id="setup-panel">
+        <h2>Choose Your Color:</h2>
+        <button class="player-choice-btn" data-color="black">Play as Black</button>
+        <button class="player-choice-btn" data-color="white">Play as White</button>
+    </div>
+
+    <div id="status-panel"></div>
+
+    <div id="board-container">
+        <div id="game-board"></div>
+        <div id="stone-layer"></div>
+    </div>
+
+    <button id="restart-button">New Game</button>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+
+            // --- Constants and Game State ---
+            const BOARD_SIZE = 15;
+            const CELL_SIZE = 36;
+            
+            // DOM Elements
+            const setupPanel = document.getElementById('setup-panel');
+            const statusPanel = document.getElementById('status-panel');
+            const boardContainer = document.getElementById('board-container');
+            const stoneLayer = document.getElementById('stone-layer');
+            const restartButton = document.getElementById('restart-button');
+
+            // Game State
+            let boardState, humanPlayer, aiPlayer, currentPlayer, gameOver;
+
+            // --- Event Listeners ---
+            document.querySelectorAll('.player-choice-btn').forEach(button => {
+                button.addEventListener('click', () => startGame(button.dataset.color));
+            });
+            restartButton.addEventListener('click', () => {
+                // Show setup panel to let user choose color again
+                setupPanel.style.display = 'block';
+                boardContainer.style.display = 'none';
+                restartButton.style.display = 'none';
+                statusPanel.textContent = '';
+            });
+            boardContainer.addEventListener('click', handleHumanMove);
+
+            // --- Game Flow Functions ---
+            function startGame(playerColor) {
+                humanPlayer = playerColor;
+                aiPlayer = (humanPlayer === 'black') ? 'white' : 'black';
+                
+                boardState = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(null));
+                currentPlayer = 'black'; // Black always starts
+                gameOver = false;
+                
+                // Clear UI
+                stoneLayer.innerHTML = '';
+                setupPanel.style.display = 'none';
+                boardContainer.style.display = 'block';
+                restartButton.style.display = 'block';
+
+                updateStatus();
+
+                if (currentPlayer === aiPlayer) {
+                    // If AI is black, it makes the first move.
+                    setTimeout(makeAIMove, 500);
+                }
+            }
+
+            function handleHumanMove(event) {
+                if (gameOver || currentPlayer !== humanPlayer) return;
+
+                const rect = boardContainer.getBoundingClientRect();
+                const x = event.clientX - rect.left;
+                const y = event.clientY - rect.top;
+
+                const col = Math.round((x - CELL_SIZE / 2) / CELL_SIZE);
+                const row = Math.round((y - CELL_SIZE / 2) / CELL_SIZE);
+                
+                if (row >= 0 && row < BOARD_SIZE && col >= 0 && col < BOARD_SIZE && !boardState[row][col]) {
+                    placeStone(row, col, humanPlayer);
+                    if (checkForWin(row, col, humanPlayer)) {
+                        endGame(`${humanPlayer.charAt(0).toUpperCase() + humanPlayer.slice(1)} Wins!`);
+                    } else {
+                        switchPlayer();
+                        setTimeout(makeAIMove, 500); // AI's turn
+                    }
+                }
+            }
+
+            function makeAIMove() {
+                if (gameOver) return;
+                statusPanel.textContent = "AI is thinking...";
+                
+                // The AI finds the best move based on a scoring algorithm.
+                const { row, col } = findBestMove();
+                
+                placeStone(row, col, aiPlayer);
+                if (checkForWin(row, col, aiPlayer)) {
+                    endGame("AI Wins!");
+                } else {
+                    switchPlayer();
+                }
+            }
+            
+            function switchPlayer() {
+                currentPlayer = (currentPlayer === 'black') ? 'white' : 'black';
+                updateStatus();
+            }
+
+            function endGame(message) {
+                gameOver = true;
+                statusPanel.textContent = message;
+            }
+            
+            function updateStatus() {
+                if (gameOver) return;
+                if (currentPlayer === humanPlayer) {
+                    statusPanel.textContent = "Your Turn";
+                } else {
+                    statusPanel.textContent = "AI's Turn";
+                }
+            }
+
+            // --- Drawing and Helper Functions ---
+            function placeStone(row, col, player) {
+                boardState[row][col] = player;
+                const stone = document.createElement('div');
+                stone.classList.add('stone', player);
+                stone.style.top = `${row * CELL_SIZE + CELL_SIZE / 2}px`;
+                stone.style.left = `${col * CELL_SIZE + CELL_SIZE / 2}px`;
+                stone.dataset.row = row;
+                stone.dataset.col = col;
+                stoneLayer.appendChild(stone);
+            }
+
+            // --- AI Logic: Heuristic Evaluation ---
+            function findBestMove() {
+                let bestScore = -Infinity;
+                let move = {};
+
+                // If board is empty, play in the center
+                const center = Math.floor(BOARD_SIZE / 2);
+                if (!boardState[center][center]) {
+                    return { row: center, col: center };
+                }
+
+                for (let r = 0; r < BOARD_SIZE; r++) {
+                    for (let c = 0; c < BOARD_SIZE; c++) {
+                        if (!boardState[r][c]) {
+                            // Calculate score for placing an AI stone here
+                            const aiScore = calculateScore(r, c, aiPlayer);
+                            // Calculate score for placing a human stone here (for defensive purposes)
+                            const humanScore = calculateScore(r, c, humanPlayer);
+                            
+                            // The score of a move is its offensive potential plus its defensive necessity.
+                            const currentScore = aiScore + humanScore;
+                            
+                            if (currentScore > bestScore) {
+                                bestScore = currentScore;
+                                move = { row: r, col: c };
+                            }
+                        }
+                    }
+                }
+                return move;
+            }
+
+            function calculateScore(row, col, player) {
+                let score = 0;
+                const directions = [[1, 0], [0, 1], [1, 1], [1, -1]]; // H, V, D\, D/
+                
+                for (const [dr, dc] of directions) {
+                    let consecutive = 0;
+                    let openEnds = 0;
+                    
+                    // Check one direction
+                    for (let i = 1; i < 5; i++) {
+                        const r = row + i * dr;
+                        const c = col + i * dc;
+                        if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE && boardState[r][c] === player) {
+                            consecutive++;
+                        } else if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE && !boardState[r][c]) {
+                            openEnds++;
+                            break;
+                        } else {
+                            break; // Blocked
+                        }
+                    }
+
+                    // Check opposite direction
+                    for (let i = 1; i < 5; i++) {
+                        const r = row - i * dr;
+                        const c = col - i * dc;
+                        if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE && boardState[r][c] === player) {
+                            consecutive++;
+                        } else if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE && !boardState[r][c]) {
+                            openEnds++;
+                            break;
+                        } else {
+                            break; // Blocked
+                        }
+                    }
+
+                    // Assign scores based on the pattern found
+                    // A five-in-a-row is a winning move.
+                    if (consecutive >= 4) score += 100000; 
+                    // An open-ended four is a guaranteed win next turn.
+                    else if (consecutive === 3 && openEnds === 2) score += 50000;
+                    // A blocked four is still a major threat.
+                    else if (consecutive === 3 && openEnds === 1) score += 1000;
+                    // An open-ended three is a key strategic move.
+                    else if (consecutive === 2 && openEnds === 2) score += 500;
+                    else if (consecutive === 2 && openEnds === 1) score += 100;
+                    else if (consecutive === 1 && openEnds === 2) score += 50;
+                    else if (consecutive === 1 && openEnds === 1) score += 10;
+                    else score += openEnds;
+                }
+                return score;
+            }
+            
+            // --- Win Checking Logic ---
+            function checkForWin(row, col, player) {
+                const directions = [[1, 0], [0, 1], [1, 1], [1, -1]];
+                for (const [dr, dc] of directions) {
+                    let count = 1;
+                    let winningStones = [{row, col}];
+                    
+                    // Count in one direction
+                    for (let i = 1; i < 5; i++) {
+                        const r = row + i * dr;
+                        const c = col + i * dc;
+                        if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE && boardState[r][c] === player) {
+                            count++;
+                            winningStones.push({row:r, col:c});
+                        } else break;
+                    }
+
+                    // Count in opposite direction
+                    for (let i = 1; i < 5; i++) {
+                        const r = row - i * dr;
+                        const c = col - i * dc;
+                        if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE && boardState[r][c] === player) {
+                            count++;
+                             winningStones.push({row:r, col:c});
+                        } else break;
+                    }
+
+                    if (count >= 5) {
+                        highlightWinningStones(winningStones);
+                        return true;
+                    }
+                }
+                return false;
+            }
+            
+            function highlightWinningStones(stones) {
+                stones.forEach(stonePos => {
+                    const stoneEl = document.querySelector(`.stone[data-row='${stonePos.row}'][data-col='${stonePos.col}']`);
+                    if (stoneEl) stoneEl.classList.add('winning-stone');
+                });
+            }
+        });
+    </script>
+</body>
+</html>
